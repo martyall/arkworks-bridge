@@ -1,9 +1,11 @@
 mod circuit;
 mod header;
+mod inputs;
 mod r1cs;
 mod witness;
 
 use crate::circuit::Circuit;
+use crate::inputs::{parse_inputs_file, Inputs};
 use crate::witness::Witness; // Import IntoDeserializer trait
 use ark_bn254::Bn254;
 use ark_crypto_primitives::snark::*;
@@ -218,12 +220,9 @@ fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::
 
     debug!("Loading witness file from {:}", inputs.display());
 
-    let witness: Witness<Bn254> = parse_witness_file(reader)?.into();
+    let inputs: Inputs<Bn254> = parse_inputs_file(reader)?.into();
 
-    let mut input_tuples: Vec<(usize, ark_bn254::Fr)> =
-        witness.input_variables.into_iter().collect();
-    input_tuples.sort_by(|(a, _), (b, _)| a.cmp(b));
-    let inputs: Vec<ark_bn254::Fr> = input_tuples.into_iter().map(|(_, v)| v).collect();
+    let inputs: Vec<ark_bn254::Fr> = inputs.inputs.into_iter().map(|(_, v)| v).collect();
 
     debug!("Processing verifying key");
 
@@ -295,7 +294,7 @@ mod tests {
         let pk = PathBuf::from("test/resources/pk");
         let vk = PathBuf::from("test/resources/vk");
         let proof = PathBuf::from("test/resources/proof");
-        let inputs = PathBuf::from("test/resources/prog-witness.jsonl");
+        let inputs = PathBuf::from("test/resources/prog-inputs.jsonl");
 
         create_trusted_setup(r1cs.clone(), pk.clone(), vk.clone()).unwrap();
         create_proof(pk.clone(), witness, r1cs, proof.clone()).unwrap();

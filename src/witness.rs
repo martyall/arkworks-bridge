@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::str::FromStr; // Import IntoDeserializer trait
 
-fn deserialize_coeff_var_tuple<'de, D, E>(
+pub fn deserialize_coeff_var_tuple<'de, D, E>(
     deserializer: D,
 ) -> Result<(usize, E::ScalarField), D::Error>
 where
