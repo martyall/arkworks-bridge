@@ -37,13 +37,13 @@ struct Cli {
 enum Command {
     CreateTrustedSetup {
         #[structopt(short, long, parse(from_os_str))]
-        r1cs_path: PathBuf,
+        r1cs: PathBuf,
 
         #[structopt(short, long, parse(from_os_str))]
-        pk_output: PathBuf,
+        proving_key: PathBuf,
 
         #[structopt(short, long, parse(from_os_str))]
-        vk_output: PathBuf,
+        verifying_key: PathBuf,
     },
     /// Read the proving key, witness file, and R1CS file to create a proof
     CreateProof {
@@ -57,7 +57,7 @@ enum Command {
         r1cs: PathBuf,
 
         #[structopt(short, long, parse(from_os_str))]
-        output: PathBuf,
+        proof: PathBuf,
     },
 
     /// Read the verifying key, proof, and witness file to verify the proof
@@ -67,6 +67,16 @@ enum Command {
 
         #[structopt(short, long, parse(from_os_str))]
         proof: PathBuf,
+
+        #[structopt(short, long, parse(from_os_str))]
+        inputs: PathBuf,
+    },
+    RunR1CS {
+        #[structopt(short, long, parse(from_os_str))]
+        r1cs: PathBuf,
+
+        #[structopt(short, long, parse(from_os_str))]
+        witness: PathBuf,
 
         #[structopt(short, long, parse(from_os_str))]
         inputs: PathBuf,
@@ -240,6 +250,67 @@ fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::
     Ok(result)
 }
 
+fn run_r1cs(r1cs: PathBuf, witness: PathBuf, inputs: PathBuf) -> io::Result<()> {
+    let file = File::open(r1cs.clone())?;
+    let reader = BufReader::new(file);
+
+    debug!("Loading R1CS file from {:}", r1cs.display());
+
+    let r1cs: R1CS<Bn254> = parse_r1cs_file(reader)?.into();
+
+    let file = File::open(witness.clone())?;
+    let reader = BufReader::new(file);
+
+    debug!("Loading witness file from {:}", witness.display());
+
+    let witness: Witness<Bn254> = parse_witness_file(reader)?.into();
+
+    let file = File::open(inputs.clone())?;
+    let reader = BufReader::new(file);
+
+    debug!("Loading inputs file from {:}", inputs.display());
+
+    let inputs: Inputs<Bn254> = parse_inputs_file(reader)?.into();
+
+    let inputs: Vec<ark_bn254::Fr> = inputs.inputs.into_iter().map(|(_, v)| v).collect();
+
+    let circuit = Circuit {
+        r1cs,
+        witness: Some(witness),
+    };
+
+    let (proving_key, verifying_key) =
+        Groth16::<Bn254>::circuit_specific_setup(circuit.clone(), &mut thread_rng()).map_err(
+            |err| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to create trusted setup: {}", err),
+                )
+            },
+        )?;
+
+    debug!("Creating proof for witness");
+
+    let proof =
+        Groth16::<Bn254>::prove(&proving_key, circuit, &mut thread_rng()).map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to create proof: {}", err),
+            )
+        })?;
+
+    let valid = Groth16::<Bn254>::verify(&verifying_key, &inputs, &proof).unwrap();
+
+    if valid {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Proof verification failed",
+        ))
+    }
+}
+
 fn main() -> io::Result<()> {
     // Clap to handle command line arguments
 
@@ -255,19 +326,19 @@ fn main() -> io::Result<()> {
 
     match args.command {
         Command::CreateTrustedSetup {
-            r1cs_path,
-            pk_output,
-            vk_output,
+            r1cs,
+            proving_key,
+            verifying_key,
         } => {
-            create_trusted_setup(r1cs_path, pk_output, vk_output)?;
+            create_trusted_setup(r1cs, proving_key, verifying_key)?;
         }
         Command::CreateProof {
             proving_key,
             witness,
             r1cs,
-            output,
+            proof,
         } => {
-            create_proof(proving_key, witness, r1cs, output)?;
+            create_proof(proving_key, witness, r1cs, proof)?;
         }
         Command::VerifyProof {
             verifying_key,
@@ -275,6 +346,13 @@ fn main() -> io::Result<()> {
             inputs,
         } => {
             verify_proof(verifying_key, proof, inputs)?;
+        }
+        Command::RunR1CS {
+            r1cs,
+            witness,
+            inputs,
+        } => {
+            run_r1cs(r1cs, witness, inputs)?;
         }
     }
 

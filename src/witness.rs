@@ -31,7 +31,7 @@ pub struct WitnessFile<E: Pairing> {
     pub witness: Vec<(usize, E::ScalarField)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Witness<E: Pairing> {
     pub input_variables: HashMap<usize, E::ScalarField>,
     pub witness_variables: HashMap<usize, E::ScalarField>,
