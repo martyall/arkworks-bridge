@@ -22,7 +22,7 @@ use structopt::StructOpt;
 use witness::parse_witness_file;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "straw-arkworks-bridge", global_settings = &[AppSettings::TrailingVarArg])]
+#[structopt(name = "arkworks-bridge", global_settings = &[AppSettings::TrailingVarArg])]
 struct Cli {
     #[structopt(subcommand)]
     command: Command,
@@ -183,7 +183,7 @@ fn create_proof(
     })
 }
 
-fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::Result<()> {
+fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::Result<bool> {
     let file = File::open(verifying_key.clone())?;
     let mut reader = BufReader::new(file);
 
@@ -238,7 +238,7 @@ fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::
 
     info!("Proof verification result: {}", result);
 
-    Ok(())
+    Ok(result)
 }
 
 fn main() -> io::Result<()> {
@@ -280,4 +280,30 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::remove_file;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_end_to_end() {
+        let r1cs = PathBuf::from("test/resources/prog-r1cs.jsonl");
+        let witness = PathBuf::from("test/resources/prog-witness.jsonl");
+        let pk = PathBuf::from("test/resources/pk");
+        let vk = PathBuf::from("test/resources/vk");
+        let proof = PathBuf::from("test/resources/proof");
+        let inputs = PathBuf::from("test/resources/prog-witness.jsonl");
+
+        create_trusted_setup(r1cs.clone(), pk.clone(), vk.clone()).unwrap();
+        create_proof(pk.clone(), witness, r1cs, proof.clone()).unwrap();
+        assert!(verify_proof(vk.clone(), proof.clone(), inputs).unwrap());
+
+        // Clean up
+        remove_file(pk).unwrap();
+        remove_file(vk).unwrap();
+        remove_file(proof).unwrap();
+    }
 }
