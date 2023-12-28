@@ -7,6 +7,7 @@ use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable,
 };
 
+#[derive(Clone, Debug)]
 pub struct Circuit<E: Pairing> {
     pub r1cs: R1CS<E>,
     pub witness: Option<Witness<E>>,

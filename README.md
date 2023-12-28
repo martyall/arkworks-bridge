@@ -3,15 +3,19 @@
 ## Usage
 
 
-Create proving and verification keys for a given r1cs:
-
+setup workspace:
 ```
 > cargo install
 > mkdir proof
-> arkworks-bridge create-trusted-setup --pk-output proof/pk --r1cs-path test/resources/prog-r1cs.jsonl --vk-output proof/vk                                 
 ```
 
-Create a proof given the proving keys, r1cs, and witness:
+Create proving and verification keys for a given r1cs, write the serialized keys to the file system:
+
+```
+> arkworks-bridge create-trusted-setup --proving-key proof/pk --r1cs test/resources/prog-r1cs.jsonl --verifying-key proof/vk                                 
+```
+
+Create a proof given the proving keys, r1cs, and witness, write the serialized proof to the file system:
 
 ```
 > arkworks-bridge create-proof --output proof/proof --proving-key proof/pk --r1cs test/resources/prog-r1cs.jsonl --witness test/resources/prog-witness.jsonl
