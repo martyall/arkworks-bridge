@@ -6,6 +6,7 @@
 Create proving and verification keys for a given r1cs:
 
 ```
+> cargo install
 > mkdir proof
 > arkworks-bridge create-trusted-setup --pk-output proof/pk --r1cs-path test/resources/prog-r1cs.jsonl --vk-output proof/vk                                 
 ```
