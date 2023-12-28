@@ -22,7 +22,7 @@ use structopt::StructOpt;
 use witness::parse_witness_file;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "straw-arkworks-bridge", global_settings = &[AppSettings::TrailingVarArg])]
+#[structopt(name = "arkworks-bridge", global_settings = &[AppSettings::TrailingVarArg])]
 struct Cli {
     #[structopt(subcommand)]
     command: Command,
