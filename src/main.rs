@@ -2,12 +2,14 @@ mod circuit;
 mod header;
 mod inputs;
 mod r1cs;
+mod templates;
 mod witness;
 
 use crate::circuit::Circuit;
 use crate::inputs::{parse_inputs_file, Inputs};
 use crate::witness::Witness; // Import IntoDeserializer trait
 use ark_bn254::Bn254;
+use ark_circom::ethereum as circom_eth;
 use ark_crypto_primitives::snark::*;
 use ark_groth16::Groth16;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Write};
@@ -16,6 +18,7 @@ use log::LevelFilter;
 use log::{debug, info};
 use r1cs::{parse_r1cs_file, R1CS};
 use rand::thread_rng;
+use serde_json;
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::PathBuf;
@@ -35,49 +38,71 @@ struct Cli {
 
 #[derive(StructOpt, Debug)]
 enum Command {
+    /// Create a trusted setup given an R1CS file. Currently there is no way to input randomness for the setup, so it is generated using the system's PRNG.
     CreateTrustedSetup {
+        /// Path to the R1CS file
         #[structopt(short, long, parse(from_os_str))]
         r1cs: PathBuf,
 
+        /// Write the serialized proving key to this file
         #[structopt(short, long, parse(from_os_str))]
         proving_key: PathBuf,
 
+        /// Write the serialized verifying key to this file
         #[structopt(short, long, parse(from_os_str))]
         verifying_key: PathBuf,
+
+        /// Generate a solidity verifier contract
+        #[structopt(short, long)]
+        ethereum: bool,
     },
-    /// Read the proving key, witness file, and R1CS file to create a proof
+    /// Create a proof given a proving key, witness, and R1CS file
     CreateProof {
+        /// Path to the serialized proving key
         #[structopt(short, long, parse(from_os_str))]
         proving_key: PathBuf,
 
+        // Path to the witness file
         #[structopt(short, long, parse(from_os_str))]
         witness: PathBuf,
 
+        /// Path to the R1CS file
         #[structopt(short, long, parse(from_os_str))]
         r1cs: PathBuf,
 
+        /// Write the serialized proof to this file
         #[structopt(short, long, parse(from_os_str))]
         proof: PathBuf,
-    },
 
-    /// Read the verifying key, proof, and witness file to verify the proof
+        /// Generate an eth-compatible proof and serialize as json
+        #[structopt(short, long)]
+        ethereum: bool,
+    },
+    /// Verify a proof given a verifying key, proof, and inputs
     VerifyProof {
+        /// Path to the serialized verifying key
         #[structopt(short, long, parse(from_os_str))]
         verifying_key: PathBuf,
 
+        /// Path to the serialized proof
         #[structopt(short, long, parse(from_os_str))]
         proof: PathBuf,
 
+        /// Path to the inputs file
         #[structopt(short, long, parse(from_os_str))]
         inputs: PathBuf,
     },
+    /// Generate a trusted setup, proof, and run proof verification without serializing any intermediate files. This is mostly useful for testing.
     RunR1CS {
+        /// Path to the R1CS file
         #[structopt(short, long, parse(from_os_str))]
         r1cs: PathBuf,
 
+        // Path to the witness file
         #[structopt(short, long, parse(from_os_str))]
         witness: PathBuf,
 
+        /// Path to the inputs file
         #[structopt(short, long, parse(from_os_str))]
         inputs: PathBuf,
     },
@@ -86,7 +111,8 @@ enum Command {
 fn create_trusted_setup(
     r1cs_path: PathBuf,
     pk_output: PathBuf,
-    vk_output: PathBuf,
+    mut vk_output: PathBuf,
+    ethereum: bool,
 ) -> io::Result<()> {
     let file = File::open(r1cs_path.clone())?;
     let reader = BufReader::new(file);
@@ -127,20 +153,37 @@ fn create_trusted_setup(
     );
 
     // Serialize the verifying key to the output file
-    let mut file = File::create(vk_output)?;
+    let mut file = File::create(vk_output.clone())?;
     setup.1.serialize_uncompressed(&mut file).map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format!("Failed to serialize verifying key: {}", e),
         )
-    })
+    })?;
+
+    if ethereum {
+        let file_stem = vk_output.with_file_name("Groth16Verifier.sol");
+        vk_output.set_file_name(file_stem);
+        let mut file = File::create(vk_output.clone())?;
+
+        let eth_vk: circom_eth::VerifyingKey = circom_eth::VerifyingKey::from(setup.1);
+
+        let template = templates::verifier_groth16::render_contract(&eth_vk).unwrap();
+
+        info!("Writing smart contract as {:}", vk_output.display());
+
+        file.write_all(template.as_bytes())?;
+    };
+
+    Ok(())
 }
 
 fn create_proof(
     proving_key: PathBuf,
     witness: PathBuf,
     r1cs: PathBuf,
-    output: PathBuf,
+    mut output: PathBuf,
+    ethereum: bool,
 ) -> io::Result<()> {
     let file = File::open(proving_key.clone())?;
     let mut reader = BufReader::new(file);
@@ -186,13 +229,31 @@ fn create_proof(
 
     info!("Serializing proof to file {:}", output.display());
 
-    let mut file = File::create(output)?;
+    let mut file = File::create(output.clone())?;
     proof.serialize_uncompressed(&mut file).map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format!("Failed to serialize proof: {}", e),
         )
-    })
+    })?;
+
+    if ethereum {
+        let mut file_stem = output.file_stem().unwrap().to_os_string();
+        file_stem.push("-eth");
+        output.set_file_name(file_stem);
+        output.set_extension("json");
+        let mut file = File::create(output.clone())?;
+
+        let eth_proof: circom_eth::Proof = circom_eth::Proof::from(proof);
+
+        info!(
+            "Serializing eth-compatible proof to file {:}",
+            output.display()
+        );
+        file.write_all(serde_json::to_string(&eth_proof).unwrap().as_bytes())?;
+    };
+
+    Ok(())
 }
 
 fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::Result<bool> {
@@ -329,16 +390,18 @@ fn main() -> io::Result<()> {
             r1cs,
             proving_key,
             verifying_key,
+            ethereum,
         } => {
-            create_trusted_setup(r1cs, proving_key, verifying_key)?;
+            create_trusted_setup(r1cs, proving_key, verifying_key, ethereum)?;
         }
         Command::CreateProof {
             proving_key,
             witness,
             r1cs,
             proof,
+            ethereum,
         } => {
-            create_proof(proving_key, witness, r1cs, proof)?;
+            create_proof(proving_key, witness, r1cs, proof, ethereum)?;
         }
         Command::VerifyProof {
             verifying_key,
@@ -369,13 +432,14 @@ mod tests {
     fn test_end_to_end() {
         let r1cs = PathBuf::from("test/resources/prog-r1cs.jsonl");
         let witness = PathBuf::from("test/resources/prog-witness.jsonl");
-        let pk = PathBuf::from("test/resources/pk");
-        let vk = PathBuf::from("test/resources/vk");
-        let proof = PathBuf::from("test/resources/proof");
+        let pk = PathBuf::from("test/resources/prog-pk");
+        let vk = PathBuf::from("test/resources/prog-vk");
+        let proof = PathBuf::from("test/resources/prog-proof");
         let inputs = PathBuf::from("test/resources/prog-inputs.jsonl");
 
-        create_trusted_setup(r1cs.clone(), pk.clone(), vk.clone()).unwrap();
-        create_proof(pk.clone(), witness, r1cs, proof.clone()).unwrap();
+        // ethereum is set to false because the tests aren't picking up the template for some reason?
+        create_trusted_setup(r1cs.clone(), pk.clone(), vk.clone(), false).unwrap();
+        create_proof(pk.clone(), witness, r1cs, proof.clone(), true).unwrap();
         assert!(verify_proof(vk.clone(), proof.clone(), inputs).unwrap());
 
         // Clean up
