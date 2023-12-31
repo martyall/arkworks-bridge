@@ -432,13 +432,14 @@ mod tests {
     fn test_end_to_end() {
         let r1cs = PathBuf::from("test/resources/prog-r1cs.jsonl");
         let witness = PathBuf::from("test/resources/prog-witness.jsonl");
-        let pk = PathBuf::from("test/resources/pk");
-        let vk = PathBuf::from("test/resources/vk");
-        let proof = PathBuf::from("test/resources/proof");
+        let pk = PathBuf::from("test/resources/prog-pk");
+        let vk = PathBuf::from("test/resources/prog-vk");
+        let proof = PathBuf::from("test/resources/prog-proof");
         let inputs = PathBuf::from("test/resources/prog-inputs.jsonl");
 
+        // ethereum is set to false because the tests aren't picking up the template for some reason?
         create_trusted_setup(r1cs.clone(), pk.clone(), vk.clone(), false).unwrap();
-        create_proof(pk.clone(), witness, r1cs, proof.clone(), false).unwrap();
+        create_proof(pk.clone(), witness, r1cs, proof.clone(), true).unwrap();
         assert!(verify_proof(vk.clone(), proof.clone(), inputs).unwrap());
 
         // Clean up
