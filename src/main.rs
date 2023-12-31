@@ -38,55 +38,71 @@ struct Cli {
 
 #[derive(StructOpt, Debug)]
 enum Command {
+    /// Create a trusted setup given an R1CS file. Currently there is no way to input randomness for the setup, so it is generated using the system's PRNG.
     CreateTrustedSetup {
+        /// Path to the R1CS file
         #[structopt(short, long, parse(from_os_str))]
         r1cs: PathBuf,
 
+        /// Write the serialized proving key to this file
         #[structopt(short, long, parse(from_os_str))]
         proving_key: PathBuf,
 
+        /// Write the serialized verifying key to this file
         #[structopt(short, long, parse(from_os_str))]
         verifying_key: PathBuf,
 
+        /// Generate a solidity verifier contract
         #[structopt(short, long)]
         ethereum: bool,
     },
-    /// Read the proving key, witness file, and R1CS file to create a proof
+    /// Create a proof given a proving key, witness, and R1CS file
     CreateProof {
+        /// Path to the serialized proving key
         #[structopt(short, long, parse(from_os_str))]
         proving_key: PathBuf,
 
+        // Path to the witness file
         #[structopt(short, long, parse(from_os_str))]
         witness: PathBuf,
 
+        /// Path to the R1CS file
         #[structopt(short, long, parse(from_os_str))]
         r1cs: PathBuf,
 
+        /// Write the serialized proof to this file
         #[structopt(short, long, parse(from_os_str))]
         proof: PathBuf,
 
+        /// Generate an eth-compatible proof and serialize as json
         #[structopt(short, long)]
         ethereum: bool,
     },
-
-    /// Read the verifying key, proof, and witness file to verify the proof
+    /// Verify a proof given a verifying key, proof, and inputs
     VerifyProof {
+        /// Path to the serialized verifying key
         #[structopt(short, long, parse(from_os_str))]
         verifying_key: PathBuf,
 
+        /// Path to the serialized proof
         #[structopt(short, long, parse(from_os_str))]
         proof: PathBuf,
 
+        /// Path to the inputs file
         #[structopt(short, long, parse(from_os_str))]
         inputs: PathBuf,
     },
+    /// Generate a trusted setup, proof, and run proof verification without serializing any intermediate files. This is mostly useful for testing.
     RunR1CS {
+        /// Path to the R1CS file
         #[structopt(short, long, parse(from_os_str))]
         r1cs: PathBuf,
 
+        // Path to the witness file
         #[structopt(short, long, parse(from_os_str))]
         witness: PathBuf,
 
+        /// Path to the inputs file
         #[structopt(short, long, parse(from_os_str))]
         inputs: PathBuf,
     },
