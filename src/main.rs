@@ -52,9 +52,19 @@ enum Command {
         #[structopt(short, long, parse(from_os_str))]
         verifying_key: PathBuf,
 
-        /// Generate a solidity verifier contract
+        /// Output the ethereum friendly verifier key as json
         #[structopt(short, long)]
-        ethereum: bool,
+        as_json: bool,
+    },
+    /// Generate a solidity verifier contract given a verifying key
+    GenerateContract {
+        /// Path to the serialized verifying key
+        #[structopt(short, long, parse(from_os_str))]
+        verifying_key: PathBuf,
+
+        /// Write the solidity verifier contract to this file
+        #[structopt(short, long, parse(from_os_str))]
+        contract: PathBuf,
     },
     /// Create a proof given a proving key, witness, and R1CS file
     CreateProof {
@@ -112,7 +122,7 @@ fn create_trusted_setup(
     r1cs_path: PathBuf,
     pk_output: PathBuf,
     mut vk_output: PathBuf,
-    ethereum: bool,
+    as_json: bool,
 ) -> io::Result<()> {
     let file = File::open(r1cs_path.clone())?;
     let reader = BufReader::new(file);
@@ -161,18 +171,20 @@ fn create_trusted_setup(
         )
     })?;
 
-    if ethereum {
-        let file_stem = vk_output.with_file_name("Groth16Verifier.sol");
+    if as_json {
+        let mut file_stem = vk_output.file_stem().unwrap().to_os_string();
+        file_stem.push("-eth");
         vk_output.set_file_name(file_stem);
+        vk_output.set_extension("json");
         let mut file = File::create(vk_output.clone())?;
 
         let eth_vk: circom_eth::VerifyingKey = circom_eth::VerifyingKey::from(setup.1);
 
-        let template = templates::verifier_groth16::render_contract(&eth_vk).unwrap();
-
-        info!("Writing smart contract as {:}", vk_output.display());
-
-        file.write_all(template.as_bytes())?;
+        info!(
+            "Serializing eth-compatible verifying key to file {:}",
+            vk_output.display()
+        );
+        file.write_all(serde_json::to_string(&eth_vk).unwrap().as_bytes())?;
     };
 
     Ok(())
@@ -372,6 +384,36 @@ fn run_r1cs(r1cs: PathBuf, witness: PathBuf, inputs: PathBuf) -> io::Result<()> 
     }
 }
 
+fn generate_contract(verifying_key: PathBuf, contract: PathBuf) -> io::Result<()> {
+    let file = File::open(verifying_key.clone())?;
+    let mut reader = BufReader::new(file);
+
+    debug!(
+        "Loading verifying key from file {:}",
+        verifying_key.display()
+    );
+
+    let verifying_key =
+        <Groth16<Bn254> as ark_crypto_primitives::snark::SNARK<ark_bn254::Fr>>::VerifyingKey::deserialize_uncompressed(&mut reader).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to deserialize verifying key: {}", e),
+            )
+        })?;
+
+    let mut file = File::create(contract.clone())?;
+
+    let eth_vk: circom_eth::VerifyingKey = circom_eth::VerifyingKey::from(verifying_key);
+
+    let template = templates::verifier_groth16::render_contract(&eth_vk).unwrap();
+
+    info!("Writing smart contract as {:}", contract.display());
+
+    file.write_all(template.as_bytes())?;
+
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     // Clap to handle command line arguments
 
@@ -390,9 +432,15 @@ fn main() -> io::Result<()> {
             r1cs,
             proving_key,
             verifying_key,
-            ethereum,
+            as_json,
         } => {
-            create_trusted_setup(r1cs, proving_key, verifying_key, ethereum)?;
+            create_trusted_setup(r1cs, proving_key, verifying_key, as_json)?;
+        }
+        Command::GenerateContract {
+            verifying_key,
+            contract,
+        } => {
+            generate_contract(verifying_key, contract)?;
         }
         Command::CreateProof {
             proving_key,

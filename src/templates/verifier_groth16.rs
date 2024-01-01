@@ -8,17 +8,18 @@ fn prepare_data_for_template(vk: &VerifyingKey) -> HashMap<String, serde_json::V
     let mut context = HashMap::new();
 
     // Convert G1 and G2 types to Tera-compatible format
+    let alpha1 = vk.alpha1.as_tuple();
     context.insert(
         "vk_alpha_1".to_string(),
-        json!([vk.alpha1.x.encode_hex(), vk.alpha1.y.encode_hex(),]),
+        json!([alpha1.0.encode_hex(), alpha1.1.encode_hex(),]),
     );
 
     let beta2 = vk.beta2.as_tuple();
     context.insert(
         "vk_beta_2".to_string(),
         json!([
-            [beta2.0[0].encode_hex(), beta2.0[1].encode_hex()],
-            [beta2.1[0].encode_hex(), beta2.1[1].encode_hex()],
+            beta2.0.map(|a| a.encode_hex()),
+            beta2.1.map(|a| a.encode_hex())
         ]),
     );
 
@@ -26,8 +27,8 @@ fn prepare_data_for_template(vk: &VerifyingKey) -> HashMap<String, serde_json::V
     context.insert(
         "vk_gamma_2".to_string(),
         json!([
-            [gamma2.0[0].encode_hex(), gamma2.0[1].encode_hex()],
-            [gamma2.1[0].encode_hex(), gamma2.1[1].encode_hex()],
+            gamma2.0.map(|a| a.encode_hex()),
+            gamma2.1.map(|a| a.encode_hex())
         ]),
     );
 
@@ -35,15 +36,18 @@ fn prepare_data_for_template(vk: &VerifyingKey) -> HashMap<String, serde_json::V
     context.insert(
         "vk_delta_2".to_string(),
         json!([
-            [vk_delta_2.0[0].encode_hex(), vk_delta_2.0[1].encode_hex()],
-            [vk_delta_2.1[0].encode_hex(), vk_delta_2.1[1].encode_hex()],
+            vk_delta_2.0.map(|a| a.encode_hex()),
+            vk_delta_2.1.map(|a| a.encode_hex())
         ]),
     );
 
     let ic: Vec<_> = vk
         .ic
         .iter()
-        .map(|i| json!([i.x.encode_hex(), i.y.encode_hex()]))
+        .map(|i| {
+            let i_tuple = i.as_tuple();
+            json!([i_tuple.0.encode_hex(), i_tuple.1.encode_hex()])
+        })
         .collect();
     context.insert("IC".to_string(), json!(ic));
 
