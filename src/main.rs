@@ -65,6 +65,10 @@ enum Command {
         /// Write the solidity verifier contract to this file
         #[structopt(short, long, parse(from_os_str))]
         contract: PathBuf,
+
+        /// Path to the inputs file
+        #[structopt(short, long, parse(from_os_str))]
+        inputs: PathBuf,
     },
     /// Create a proof given a proving key, witness, and R1CS file
     CreateProof {
@@ -101,6 +105,10 @@ enum Command {
         /// Path to the inputs file
         #[structopt(short, long, parse(from_os_str))]
         inputs: PathBuf,
+
+        /// load an eth-compatible proof from json
+        #[structopt(short, long)]
+        ethereum: bool,
     },
     /// Generate a trusted setup, proof, and run proof verification without serializing any intermediate files. This is mostly useful for testing.
     RunR1CS {
@@ -268,7 +276,12 @@ fn create_proof(
     Ok(())
 }
 
-fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::Result<bool> {
+fn verify_proof(
+    verifying_key: PathBuf,
+    proof: PathBuf,
+    inputs: PathBuf,
+    ethereum: bool,
+) -> io::Result<bool> {
     let file = File::open(verifying_key.clone())?;
     let mut reader = BufReader::new(file);
 
@@ -277,13 +290,33 @@ fn verify_proof(verifying_key: PathBuf, proof: PathBuf, inputs: PathBuf) -> io::
         verifying_key.display()
     );
 
-    let verifying_key =
-        <Groth16<Bn254> as ark_crypto_primitives::snark::SNARK<ark_bn254::Fr>>::VerifyingKey::deserialize_uncompressed(&mut reader).map_err(|e| {
+    let verifying_key = if ethereum {
+        let file = File::open(verifying_key.clone())?;
+        let reader = BufReader::new(file);
+
+        debug!(
+            "Loading eth-compatible verifying key from {:}",
+            verifying_key.display()
+        );
+
+        let eth_vk: circom_eth::VerifyingKey = serde_json::from_reader(reader).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::Other,
                 format!("Failed to deserialize verifying key: {}", e),
             )
         })?;
+
+        Ok(<Groth16<Bn254> as ark_crypto_primitives::snark::SNARK<
+            ark_bn254::Fr,
+        >>::VerifyingKey::from(eth_vk))
+    } else {
+        <Groth16<Bn254> as ark_crypto_primitives::snark::SNARK<ark_bn254::Fr>>::VerifyingKey::deserialize_uncompressed(&mut reader).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to deserialize verifying key: {}", e),
+            )
+        })
+    }?;
 
     let file = File::open(proof.clone())?;
     let mut reader = BufReader::new(file);
@@ -384,7 +417,7 @@ fn run_r1cs(r1cs: PathBuf, witness: PathBuf, inputs: PathBuf) -> io::Result<()> 
     }
 }
 
-fn generate_contract(verifying_key: PathBuf, contract: PathBuf) -> io::Result<()> {
+fn generate_contract(verifying_key: PathBuf, contract: PathBuf, inputs: PathBuf) -> io::Result<()> {
     let file = File::open(verifying_key.clone())?;
     let mut reader = BufReader::new(file);
 
@@ -401,14 +434,21 @@ fn generate_contract(verifying_key: PathBuf, contract: PathBuf) -> io::Result<()
             )
         })?;
 
-    let mut file = File::create(contract.clone())?;
-
     let eth_vk: circom_eth::VerifyingKey = circom_eth::VerifyingKey::from(verifying_key);
 
-    let template = templates::verifier_groth16::render_contract(&eth_vk).unwrap();
+    let file = File::open(inputs.clone())?;
+    let reader = BufReader::new(file);
+
+    debug!("Loading inputs file from {:}", inputs.display());
+
+    let inputs: Inputs<Bn254> = parse_inputs_file(reader)?.into();
+
+    let template =
+        templates::verifier_groth16::render_contract(&eth_vk, inputs.inputs.len()).unwrap();
 
     info!("Writing smart contract as {:}", contract.display());
 
+    let mut file = File::create(contract)?;
     file.write_all(template.as_bytes())?;
 
     Ok(())
@@ -439,8 +479,9 @@ fn main() -> io::Result<()> {
         Command::GenerateContract {
             verifying_key,
             contract,
+            inputs,
         } => {
-            generate_contract(verifying_key, contract)?;
+            generate_contract(verifying_key, contract, inputs)?;
         }
         Command::CreateProof {
             proving_key,
@@ -455,8 +496,9 @@ fn main() -> io::Result<()> {
             verifying_key,
             proof,
             inputs,
+            ethereum,
         } => {
-            verify_proof(verifying_key, proof, inputs)?;
+            verify_proof(verifying_key, proof, inputs, ethereum)?;
         }
         Command::RunR1CS {
             r1cs,
@@ -488,7 +530,7 @@ mod tests {
         // ethereum is set to false because the tests aren't picking up the template for some reason?
         create_trusted_setup(r1cs.clone(), pk.clone(), vk.clone(), false).unwrap();
         create_proof(pk.clone(), witness, r1cs, proof.clone(), true).unwrap();
-        assert!(verify_proof(vk.clone(), proof.clone(), inputs).unwrap());
+        assert!(verify_proof(vk.clone(), proof.clone(), inputs, false).unwrap());
 
         // Clean up
         remove_file(pk).unwrap();
