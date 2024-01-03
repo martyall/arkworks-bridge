@@ -52,7 +52,7 @@ enum Command {
         #[structopt(short, long, parse(from_os_str))]
         verifying_key: PathBuf,
 
-        /// Output the ethereum friendly verifier key as json
+        /// Export the verifying key as json (useful for external ethereum contracts)
         #[structopt(short, long)]
         ethereum: bool,
     },
