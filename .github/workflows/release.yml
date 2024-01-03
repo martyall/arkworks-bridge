@@ -1,0 +1,21 @@
+name: tag-release
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --all --release
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          target/release/arkworks-bridge
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
