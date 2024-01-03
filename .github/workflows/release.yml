@@ -15,11 +15,11 @@ jobs:
       run: |
         cargo build --all --release
         cp target/release/arkworks-bridge ./arkworks-bridge
-        tar -czf arkworks-bridge-${{ github.ref_name}}._linux_x86_64.tar.gz arkworks-bridge
+        tar -czf arkworks-bridge-${{ github.ref_name}}_linux_x86_64.tar.gz arkworks-bridge
 
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
-          arkworks-bridge-${{ github.ref_name}}._linux_x86_64.tar.gz
+          arkworks-bridge-${{ github.ref_name}}_linux_x86_64.tar.gz
