@@ -54,7 +54,7 @@ enum Command {
 
         /// Output the ethereum friendly verifier key as json
         #[structopt(short, long)]
-        as_json: bool,
+        ethereum: bool,
     },
     /// Generate a solidity verifier contract given a verifying key
     GenerateContract {
@@ -130,7 +130,7 @@ fn create_trusted_setup(
     r1cs_path: PathBuf,
     pk_output: PathBuf,
     mut vk_output: PathBuf,
-    as_json: bool,
+    ethereum: bool,
 ) -> io::Result<()> {
     let file = File::open(r1cs_path.clone())?;
     let reader = BufReader::new(file);
@@ -179,14 +179,14 @@ fn create_trusted_setup(
         )
     })?;
 
-    if as_json {
+    if ethereum {
         let mut file_stem = vk_output.file_stem().unwrap().to_os_string();
         file_stem.push("-eth");
         vk_output.set_file_name(file_stem);
         vk_output.set_extension("json");
         let mut file = File::create(vk_output.clone())?;
 
-        let eth_vk: circom_eth::VerifyingKey = circom_eth::VerifyingKey::from(setup.1);
+        let eth_vk: circom_eth::VerifyingKey = setup.1.into();
 
         info!(
             "Serializing eth-compatible verifying key to file {:}",
@@ -264,7 +264,7 @@ fn create_proof(
         output.set_extension("json");
         let mut file = File::create(output.clone())?;
 
-        let eth_proof: circom_eth::Proof = circom_eth::Proof::from(proof);
+        let eth_proof: circom_eth::Proof = proof.into();
 
         info!(
             "Serializing eth-compatible proof to file {:}",
@@ -472,9 +472,9 @@ fn main() -> io::Result<()> {
             r1cs,
             proving_key,
             verifying_key,
-            as_json,
+            ethereum,
         } => {
-            create_trusted_setup(r1cs, proving_key, verifying_key, as_json)?;
+            create_trusted_setup(r1cs, proving_key, verifying_key, ethereum)?;
         }
         Command::GenerateContract {
             verifying_key,
